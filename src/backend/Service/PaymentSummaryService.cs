@@ -37,7 +37,7 @@ public class PaymentSummaryService
             {
                 await postgresChannelBlockingGate.WaitIfBlockedAsync().ConfigureAwait(false);
                 await channelBlockingGate.WaitIfBlockedAsync().ConfigureAwait(false);
-            }, timeout: TimeSpan.FromSeconds(0.3)).ConfigureAwait(false);
+            }, timeout: TimeSpan.FromSeconds(0.5)).ConfigureAwait(false);
 
             const string sql = @"
                 SELECT processor,
