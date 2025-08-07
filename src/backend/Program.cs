@@ -4,6 +4,7 @@ using MichelOliveira.Com.ReactiveLock.DependencyInjection;
 using MichelOliveira.Com.ReactiveLock.Distributed.Redis;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Polly;
 using Polly.Extensions.Http;
@@ -57,12 +58,17 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     });
 });
 
+
+builder.Services
+    .AddOptions<DefaultOptions>()
+    .Bind(builder.Configuration);
+
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, JsonContext.Default);
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
 });
-
 builder.Services.AddHttpClient(Constant.DEFAULT_PROCESSOR_NAME, o =>
     o.BaseAddress = new Uri(builder.Configuration.GetConnectionString(Constant.DEFAULT_PROCESSOR_NAME)!))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
@@ -86,12 +92,14 @@ builder.Services.AddSingleton<PaymentBatchInserterService>();
 builder.Services.AddSingleton<RedisQueueWorker>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<RedisQueueWorker>());
 
-if (builder.Environment.IsProduction())
+if (builder.Environment.IsProduction() || builder.Environment.IsDevelopment())
 {
     builder.Logging.ClearProviders();
     builder.Logging.SetMinimumLevel(LogLevel.Error);
 }
+
 builder.Services.InitializeDistributedRedisReactiveLock(Dns.GetHostName());
+
 
 builder.Services.AddDistributedRedisReactiveLock(Constant.REACTIVELOCK_HTTP_NAME);
 builder.Services.AddDistributedRedisReactiveLock(Constant.REACTIVELOCK_POSTGRES_NAME);
@@ -103,6 +111,11 @@ builder.Services.AddDistributedRedisReactiveLock(Constant.REACTIVELOCK_API_PAYME
 ]);
 
 var app = builder.Build();
+
+var opts = app.Services.GetRequiredService<IOptions<DefaultOptions>>().Value;
+
+Console.WriteLine($"WORKER_SIZE: {opts.WORKER_SIZE}");
+Console.WriteLine($"BATCH_SIZE: {opts.BATCH_SIZE}");
 
 await app.UseDistributedRedisReactiveLockAsync();
 

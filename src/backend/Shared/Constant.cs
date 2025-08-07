@@ -6,6 +6,4 @@ public static class Constant
     public const string DEFAULT_PROCESSOR_NAME = "default";
     public const string FALLBACK_PROCESSOR_NAME = "fallback";
     public const string REDIS_QUEUE_KEY = "task-queue";
-    public const int REDIS_WORKER_SIZE = 10;
-    public const int POSTGRES_BATCH_SIZE = 100;
 }
