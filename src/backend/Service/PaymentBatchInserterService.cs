@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Dapper;
 using MichelOliveira.Com.ReactiveLock.Core;
 using MichelOliveira.Com.ReactiveLock.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 public class PaymentBatchInserterService
@@ -14,12 +15,15 @@ public class PaymentBatchInserterService
     private ConcurrentQueue<PaymentInsertParameters> Buffer { get; } = new();
 
     private IDbConnection DbConnection { get; }
+    public DefaultOptions Options { get; }
     private IReactiveLockTrackerController ReactiveLockTrackerController { get; }
 
     public PaymentBatchInserterService(IDbConnection dbConnection,
-    IReactiveLockTrackerFactory reactiveLockTrackerFactory)
+    IReactiveLockTrackerFactory reactiveLockTrackerFactory,
+    IOptions<DefaultOptions> options)
     {
         DbConnection = dbConnection ?? throw new ArgumentNullException(nameof(dbConnection));
+        Options = options.Value;
         ReactiveLockTrackerController = reactiveLockTrackerFactory.GetTrackerController(Constant.REACTIVELOCK_POSTGRES_NAME);
     }
 
@@ -28,7 +32,7 @@ public class PaymentBatchInserterService
         await ReactiveLockTrackerController.IncrementAsync().ConfigureAwait(false);
         Buffer.Enqueue(payment);
 
-        if (Buffer.Count >= Constant.POSTGRES_BATCH_SIZE)
+        if (Buffer.Count >= Options.BATCH_SIZE)
         {
             return await FlushBatchAsync().ConfigureAwait(false);
         }
@@ -52,8 +56,8 @@ public class PaymentBatchInserterService
 
         while (!Buffer.IsEmpty)
         {
-            var batch = new List<PaymentInsertParameters>(Constant.POSTGRES_BATCH_SIZE);
-            while (batch.Count < Constant.POSTGRES_BATCH_SIZE && Buffer.TryDequeue(out var item))
+            var batch = new List<PaymentInsertParameters>(Options.BATCH_SIZE);
+            while (batch.Count < Options.BATCH_SIZE && Buffer.TryDequeue(out var item))
                 batch.Add(item);
 
             if (batch.Count == 0)
