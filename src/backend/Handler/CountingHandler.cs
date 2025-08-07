@@ -14,23 +14,28 @@ using MichelOliveira.Com.ReactiveLock.DependencyInjection;
 public class CountingHandler : DelegatingHandler
 {
     private IReactiveLockTrackerController ReactiveLockTrackerController { get; set; }
+    private IReactiveLockTrackerState ReactiveLockTrackerState { get; set; }
 
     public CountingHandler(IReactiveLockTrackerFactory reactiveLockTrackerFactory)
     {
         ReactiveLockTrackerController = reactiveLockTrackerFactory.GetTrackerController(Constant.REACTIVELOCK_HTTP_NAME);
+        ReactiveLockTrackerState = reactiveLockTrackerFactory.GetTrackerState(Constant.REACTIVELOCK_HTTP_NAME);
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        await ReactiveLockTrackerController.IncrementAsync().ConfigureAwait(false);
-
+        bool isNotBlocked = !await ReactiveLockTrackerState.IsBlockedAsync();
+        if (isNotBlocked)
+            await ReactiveLockTrackerController.IncrementAsync().ConfigureAwait(false);
+        
         try
         {
             return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            await ReactiveLockTrackerController.DecrementAsync().ConfigureAwait(false);
+            if (isNotBlocked)
+                await ReactiveLockTrackerController.DecrementAsync().ConfigureAwait(false);
         }
     }
 }

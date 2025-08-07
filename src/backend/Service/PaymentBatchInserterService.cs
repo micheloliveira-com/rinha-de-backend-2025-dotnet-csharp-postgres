@@ -17,6 +17,7 @@ public class PaymentBatchInserterService
     private IDbConnection DbConnection { get; }
     public DefaultOptions Options { get; }
     private IReactiveLockTrackerController ReactiveLockTrackerController { get; }
+    private IReactiveLockTrackerState ReactiveLockTrackerState { get; }
 
     public PaymentBatchInserterService(IDbConnection dbConnection,
     IReactiveLockTrackerFactory reactiveLockTrackerFactory,
@@ -25,11 +26,14 @@ public class PaymentBatchInserterService
         DbConnection = dbConnection ?? throw new ArgumentNullException(nameof(dbConnection));
         Options = options.Value;
         ReactiveLockTrackerController = reactiveLockTrackerFactory.GetTrackerController(Constant.REACTIVELOCK_POSTGRES_NAME);
+        ReactiveLockTrackerState = reactiveLockTrackerFactory.GetTrackerState(Constant.REACTIVELOCK_POSTGRES_NAME);
     }
 
     public async Task<int> AddAsync(PaymentInsertParameters payment)
     {
-        await ReactiveLockTrackerController.IncrementAsync().ConfigureAwait(false);
+        bool isNotBlocked = !await ReactiveLockTrackerState.IsBlockedAsync();
+        if (isNotBlocked)
+            await ReactiveLockTrackerController.IncrementAsync().ConfigureAwait(false);
         Buffer.Enqueue(payment);
 
         if (Buffer.Count >= Options.BATCH_SIZE)
