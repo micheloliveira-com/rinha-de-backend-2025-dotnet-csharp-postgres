@@ -75,3 +75,9 @@ jobs:
             name: comment-md
             path: comment.md
             retention-days: 1
+
+      - name: Run k6 test 2
+        run: k6 -q -e MAX_REQUESTS=550 run rinha.js
+        
+      - name: Run k6 test 3
+        run: k6 -q -e MAX_REQUESTS=550 run rinha.js
