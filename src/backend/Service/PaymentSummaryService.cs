@@ -10,23 +10,30 @@ public class PaymentSummaryService
     private IReactiveLockTrackerFactory LockFactory { get; }
     private PaymentBatchInserterService BatchInserter { get; }
     private ConsoleWriterService ConsoleWriterService { get; }
+    private RunningPaymentsSummaryData RunningPaymentsSummaryData { get; }
 
     public PaymentSummaryService(
         IDbConnection conn,
         IReactiveLockTrackerFactory lockFactory,
         PaymentBatchInserterService batchInserter,
-        ConsoleWriterService consoleWriterService)
+        ConsoleWriterService consoleWriterService,
+        RunningPaymentsSummaryData runningPaymentsSummaryData)
     {
         Conn = conn;
         LockFactory = lockFactory;
         BatchInserter = batchInserter;
         ConsoleWriterService = consoleWriterService;
+        RunningPaymentsSummaryData = runningPaymentsSummaryData;
     }
 
     public async Task<IResult> GetPaymentsSummaryAsync(DateTimeOffset? from, DateTimeOffset? to)
     {
         var paymentsLock = LockFactory.GetTrackerController(Constant.REACTIVELOCK_API_PAYMENTS_SUMMARY_NAME);
-        await paymentsLock.IncrementAsync().ConfigureAwait(false);
+        
+        var lockData = $"{(from.HasValue ? from.Value.UtcDateTime.ToString("o") : "")};" +
+                    $"{(to.HasValue ? to.Value.UtcDateTime.ToString("o") : "")}";
+
+        await paymentsLock.IncrementAsync(lockData).ConfigureAwait(false);
 
         var postgresChannelBlockingGate = LockFactory.GetTrackerState(Constant.REACTIVELOCK_POSTGRES_NAME);
         var channelBlockingGate = LockFactory.GetTrackerState(Constant.REACTIVELOCK_HTTP_NAME);
@@ -37,7 +44,7 @@ public class PaymentSummaryService
             {
                 await postgresChannelBlockingGate.WaitIfBlockedAsync().ConfigureAwait(false);
                 await channelBlockingGate.WaitIfBlockedAsync().ConfigureAwait(false);
-            }, timeout: TimeSpan.FromSeconds(0.5)).ConfigureAwait(false);
+            }, timeout: TimeSpan.FromSeconds(1.3)).ConfigureAwait(false);
 
             const string sql = @"
                 SELECT processor,
@@ -71,6 +78,27 @@ public class PaymentSummaryService
     {
         ConsoleWriterService.WriteLine("[Redis] Gate blocked.");
         var state = LockFactory.GetTrackerState(Constant.REACTIVELOCK_API_PAYMENTS_SUMMARY_NAME);
+        var lockEntries = await state.GetLockDataEntriesIfBlockedAsync();
+        if (lockEntries.Length > 0)
+        {
+            var parsedRanges = lockEntries
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(entry =>
+            {
+                var parts = entry.Split(';', 2);
+
+                DateTimeOffset? ParsePart(string? s) =>
+                    string.IsNullOrWhiteSpace(s) ? null :
+                    DateTimeOffset.TryParse(s, out var dt) ? dt : null;
+
+                return (from: ParsePart(parts.ElementAtOrDefault(0)), to: ParsePart(parts.ElementAtOrDefault(1)));
+            });
+
+            foreach (var range in parsedRanges)
+            {
+                RunningPaymentsSummaryData.CurrentRanges.Add(range);
+            }
+        }
 
         await state.WaitIfBlockedAsync(
             whileBlockedLoopDelay: TimeSpan.FromMilliseconds(10),
@@ -89,6 +117,8 @@ public class PaymentSummaryService
                     Console.WriteLine($"[Redis][Error] Exception while processing message: {ex}");
                 }
             }).ConfigureAwait(false);
+
+        RunningPaymentsSummaryData.CurrentRanges.Clear();
     }
 
     private async Task<bool> WaitWithTimeoutAsync(Func<Task> taskFactory, TimeSpan timeout)
