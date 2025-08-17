@@ -1,6 +1,6 @@
 public class ConsoleWriterService
 {
-    public IWebHostEnvironment Env { get; }
+    private IWebHostEnvironment Env { get; }
     public ConsoleWriterService(IWebHostEnvironment env)
     {
         Env = env;        

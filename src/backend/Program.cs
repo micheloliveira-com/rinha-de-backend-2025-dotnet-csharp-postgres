@@ -4,6 +4,7 @@ using MichelOliveira.Com.ReactiveLock.DependencyInjection;
 using MichelOliveira.Com.ReactiveLock.Distributed.Redis;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Polly;
 using Polly.Extensions.Http;
@@ -22,8 +23,8 @@ var builder = WebApplication.CreateSlimBuilder(args);
 var warmupRetryPolicy = Policy
     .Handle<Exception>()
     .WaitAndRetry(
-        retryCount: 60,
-        sleepDurationProvider: _ => TimeSpan.FromSeconds(1),
+        retryCount: 60 * 10,
+        sleepDurationProvider: _ => TimeSpan.FromSeconds(0.1),
         onRetry: (exception, timeSpan, retryCount, context) =>
         {
             Console.WriteLine($"Retry {retryCount}: {exception.GetType().Name} - {exception.Message}");
@@ -32,8 +33,8 @@ var warmupRetryPolicy = Policy
 var warmupAsyncRetryPolicy = Policy
     .Handle<Exception>()
     .WaitAndRetryAsync(
-        retryCount: 60,
-        sleepDurationProvider: _ => TimeSpan.FromSeconds(1),
+        retryCount: 60 * 10,
+        sleepDurationProvider: _ => TimeSpan.FromSeconds(0.1),
         onRetry: (exception, timeSpan, retryCount, context) =>
         {
             Console.WriteLine($"Async Retry {retryCount}: {exception.GetType().Name} - {exception.Message}");
@@ -57,14 +58,32 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     });
 });
 
+
+builder.Services
+    .AddOptions<DefaultOptions>()
+    .Bind(builder.Configuration);
+
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, JsonContext.Default);
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
 });
-
 builder.Services.AddHttpClient(Constant.DEFAULT_PROCESSOR_NAME, o =>
     o.BaseAddress = new Uri(builder.Configuration.GetConnectionString(Constant.DEFAULT_PROCESSOR_NAME)!))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        MaxConnectionsPerServer = int.MaxValue,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
+        EnableMultipleHttp2Connections = true,
+        ConnectTimeout = TimeSpan.FromSeconds(5),
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+    })
+    .AddHttpMessageHandler<CountingHandler>();
+
+builder.Services.AddHttpClient(Constant.FALLBACK_PROCESSOR_NAME, o =>
+    o.BaseAddress = new Uri(builder.Configuration.GetConnectionString(Constant.FALLBACK_PROCESSOR_NAME)!))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
         MaxConnectionsPerServer = int.MaxValue,
@@ -80,19 +99,30 @@ builder.Services.AddTransient<IDbConnection>(sp =>
     new NpgsqlConnection(builder.Configuration.GetConnectionString("postgres")));
 builder.Services.AddTransient<CountingHandler>();
 builder.Services.AddSingleton<PaymentService>();
+builder.Services.AddSingleton<RunningPaymentsSummaryData>();
 builder.Services.AddSingleton<ConsoleWriterService>();
 builder.Services.AddSingleton<PaymentSummaryService>();
 builder.Services.AddSingleton<PaymentBatchInserterService>();
 builder.Services.AddSingleton<RedisQueueWorker>();
+builder.Services.AddSingleton<PaymentProcessorService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<RedisQueueWorker>());
 
-if (builder.Environment.IsProduction())
+if (builder.Environment.IsProduction() || builder.Environment.IsDevelopment())
 {
     builder.Logging.ClearProviders();
     builder.Logging.SetMinimumLevel(LogLevel.Error);
 }
+
 builder.Services.InitializeDistributedRedisReactiveLock(Dns.GetHostName());
 
+var opts = builder.Configuration
+    .Get<DefaultOptions>()!;
+
+Console.WriteLine($"WORKER_SIZE: {opts.WORKER_SIZE}");
+Console.WriteLine($"BATCH_SIZE: {opts.BATCH_SIZE}");
+
+builder.Services.AddDistributedRedisReactiveLock(Constant.DEFAULT_PROCESSOR_ERROR_THRESHOLD_NAME,
+                                                busyThreshold: opts.DEFAULT_PROCESSOR_CIRCUIT_ERROR_THRESHOLD_SECONDS);
 builder.Services.AddDistributedRedisReactiveLock(Constant.REACTIVELOCK_HTTP_NAME);
 builder.Services.AddDistributedRedisReactiveLock(Constant.REACTIVELOCK_POSTGRES_NAME);
 builder.Services.AddDistributedRedisReactiveLock(Constant.REACTIVELOCK_API_PAYMENTS_SUMMARY_NAME, [

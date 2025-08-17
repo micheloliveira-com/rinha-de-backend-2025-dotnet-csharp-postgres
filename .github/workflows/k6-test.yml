@@ -51,9 +51,47 @@ jobs:
 
       - name: Run k6 test
         run: k6 -q -e MAX_REQUESTS=550 run rinha.js
+
       - name: Create Comment MD File
         run: |
           echo "## k6 Test Results" > comment.md
+          echo "Hash: ${{ github.sha }}" >> comment.md
+          echo "\`\`\`json" >> comment.md
+          cat partial-results.json >> comment.md
+          echo "\n\`\`\`" >> comment.md
+
+      - name: Append Docker Compose Logs
+        run: |
+          echo "## Docker Compose Logs" >> comment.md
+          echo '```log' >> comment.md
+          cd src && docker-compose logs >> ../comment.md || true
+          echo '```' >> comment.md
+
+      - name: Run k6 test 2
+        run: k6 -q -e MAX_REQUESTS=550 run rinha.js
+
+      - name: Append Comment MD File
+        run: |
+          echo "## k6 Test Results" >> comment.md
+          echo "Hash: ${{ github.sha }}" >> comment.md
+          echo "\`\`\`json" >> comment.md
+          cat partial-results.json >> comment.md
+          echo "\n\`\`\`" >> comment.md
+
+      - name: Append Docker Compose Logs
+        run: |
+          echo "## Docker Compose Logs" >> comment.md
+          echo '```log' >> comment.md
+          cd src && docker-compose logs >> ../comment.md || true
+          echo '```' >> comment.md
+
+        
+      - name: Run k6 test 3
+        run: k6 -q -e MAX_REQUESTS=550 run rinha.js
+
+      - name: Append Comment MD File
+        run: |
+          echo "## k6 Test Results" >> comment.md
           echo "Hash: ${{ github.sha }}" >> comment.md
           echo "\`\`\`json" >> comment.md
           cat partial-results.json >> comment.md

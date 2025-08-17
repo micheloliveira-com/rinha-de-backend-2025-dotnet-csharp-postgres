@@ -38,6 +38,7 @@ public record PaymentRequest(
 [JsonSerializable(typeof(PaymentRequest))]
 [JsonSerializable(typeof(PaymentSummaryResponse))]
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(PaymentInsertParameters))]
 internal partial class JsonContext : JsonSerializerContext
 {
 
