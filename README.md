@@ -1,5 +1,9 @@
 # Rinha de Backend 2025 - API em .NET 10 com AOT
 
+> ⚠️ **Nota:** As versões enviadas para a Rinha de Backend 2025 estão desatualizadas.  
+> Veja as versões atualizadas no projeto **ReactiveLock**:  
+> [https://github.com/micheloliveira-com/ReactiveLock/tree/main/test/integration](https://github.com/micheloliveira-com/ReactiveLock/tree/main/test/integration)
+
 API de pagamentos desenvolvida para o desafio [Rinha de Backend 2025](https://github.com/zanfranceschi/rinha-de-backend-2025), com foco em performance extrema, inicialização instantânea e concorrência eficiente. A aplicação é construída com .NET 10 em modo AOT (Ahead-of-Time), garantindo uso mínimo de recursos e latência reduzida.
 
 ## Leia no meu blog os insights que tive dessa versão:
